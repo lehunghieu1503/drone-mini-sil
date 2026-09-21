@@ -1,0 +1,5 @@
+# Pinned dev/runtime dependencies. Locked set lives in requirements.lock.txt.
+numpy==2.2.6
+matplotlib==3.10.9
+rotorpy==3.0.0
+pytest==9.1.1

@@ -1,0 +1,25 @@
+# build outputs
+build/
+*.o
+*.so
+*.a
+*.elf
+*.bin
+*.map
+
+# python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# simulation logs (flight data is not committed)
+logs/
+*.csv
+*.png
+
+# editor / os
+.vscode/
+.idea/
+.DS_Store

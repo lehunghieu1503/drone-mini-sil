@@ -1,0 +1,16 @@
+[project]
+name = "drone-mini-sil"
+version = "0.1.0"
+description = "Drone mini SIL/HIL stack: C++20 flight core + Python plant lockstep"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+markers = [
+    "slow: end-to-end simulations (kept in `make gate`; excluded from `make test`)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"

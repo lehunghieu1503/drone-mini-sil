@@ -1,0 +1,11 @@
+menu "Drone Mini"
+
+    config DRONE_HIL
+        bool "Enable HIL (hardware-in-the-loop) transport"
+        default n
+        help
+            Enables the HIL transport path in HwHal, which streams SIL wire
+            frames over a UART bridge to the Python plant. Without this option
+            the HIL transport code is compiled out entirely.
+
+endmenu
