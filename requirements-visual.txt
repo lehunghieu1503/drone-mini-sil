@@ -1,0 +1,11 @@
+# Optional fidelity / visualization dependencies (V3+).
+#
+# NOT required for `make gate` (kept lean + bit-for-bit deterministic on RK4).
+# Install into the existing venv:
+#   make venv-visual
+# or:
+#   uv pip install --python .venv/bin/python -r requirements-visual.txt
+#
+# MuJoCo is used only by the opt-in `--plant mujoco` adapter
+# (plant/vehicle_mujoco.py). Tests skip cleanly when it is absent.
+mujoco==3.14.0

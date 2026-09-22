@@ -159,4 +159,8 @@ def make_plant(name: str = "rk4", clean: bool = False, seed: int = 0):
         from .vehicle_rotorpy import RotorPyPlant  # P4
 
         return RotorPyPlant(seed=seed, clean=clean)
+    if name == "mujoco":
+        from .vehicle_mujoco import MuJoCoPlant  # V3
+
+        return MuJoCoPlant(seed=seed, clean=clean)
     raise ValueError(f"unknown plant: {name}")

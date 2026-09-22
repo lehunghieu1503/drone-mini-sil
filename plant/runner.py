@@ -110,9 +110,10 @@ def run(args, metrics: dict | None = None) -> int:
             repr((P.MASS_KG, P.K_T, P.K_Q, P.TAU_M_S, P.OMEGA_MAX_RAD_S,
                   P.INERTIA)).encode()
         ).hexdigest()[:8]
+        det = "rk4" if args.plant == "rk4" else f"{args.plant}-version-pinned"
         writer = CsvWriter(args.log, meta={
             "kind": "SIL", "schema": 2, "seed": args.seed, "dt_us": P.DT_US,
-            "plant": args.plant, "determinism": "rk4",
+            "plant": args.plant, "determinism": det,
             "scenario": args.scenario, "mode": args.mode,
             "versions": f"numpy={_np.__version__}",
             "params_hash": params_hash,
@@ -217,7 +218,7 @@ def run(args, metrics: dict | None = None) -> int:
 def build_parser():
     ap = argparse.ArgumentParser(prog="plant.runner")
     ap.add_argument("--seed", type=int, default=1)
-    ap.add_argument("--plant", default="rk4", choices=["rk4", "rotorpy"])
+    ap.add_argument("--plant", default="rk4", choices=["rk4", "rotorpy", "mujoco"])
     ap.add_argument("--mode", default="open-loop", choices=["open-loop", "rate", "attitude"])
     ap.add_argument("--scenario", default="hover")
     ap.add_argument("--t-end", type=float, default=10.0)

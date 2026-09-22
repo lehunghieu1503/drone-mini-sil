@@ -14,20 +14,40 @@ firmware/main/hal/      IHal implementations: sil / hw / mock + wire protocol
 firmware/host/          extern "C" bindings for pytest (host lib only)
 firmware/main/          ESP-IDF component (app_main, Kconfig)
 sim/                    native SIL runner (transport client)
-plant/                  Python 6-DOF plant, battery, IMU, RC, log, runner
+plant/                  Python plants (RK4 / RotorPy / MuJoCo), battery, IMU, RC, log, runner
 tests/                  pytest ABI/gate/unit/SIL tests
-tools/                  plot + compare overlay
+tools/                  plot + compare overlay + sim-to-sim
 docs/                   SIL_STACK.md copy + measurements registry
 ```
+
+## Plants
+
+`plant/vehicle.py::make_plant` selects the engine behind the same `Plant`
+interface (`step` / `sense` / `finite` / `pos` / `vel` / `quat` / `omega` /
+`motors`). Firmware and wire protocol are unchanged.
+
+| `--plant` | Engine | Status |
+|---|---|---|
+| `rk4` (default) | in-repo 6-DOF RK4 | authoritative, bit-for-bit deterministic |
+| `rotorpy` | RotorPy 3.0.0 | opt-in reference (own rotor geometry/params) |
+| `mujoco` | Menagerie Crazyflie 2 (MIT) | opt-in high-fidelity (contacts/aero) |
+
+The MuJoCo adapter (`plant/vehicle_mujoco.py`) drives the vendored Menagerie
+model through `mjData.xfrc_applied` with the same propulsion model as RK4, and
+overwrites the body mass/inertia with `drone_mini_params` by default so it is a
+drop-in engine swap. MuJoCo is optional — install it with `make venv-visual`.
+`make sim2sim` compares engines under an identical duty profile.
 
 ## Build & test
 
 ```sh
-make venv     # uv venv (py3.13) + pinned deps
-make host     # native host lib (no ESP-IDF required)
-make sil      # sim/sil_runner
-make test     # unit tests only (excludes slow)
-make gate     # unit + slow e2e criteria (the headline gate)
+make venv        # uv venv (py3.13) + pinned deps
+make venv-visual # optional: MuJoCo for --plant mujoco (not needed for gate)
+make host        # native host lib (no ESP-IDF required)
+make sil         # sim/sil_runner
+make test        # unit tests only (excludes slow)
+make gate        # unit + slow e2e criteria (the headline gate)
+make sim2sim     # compare RK4 / MuJoCo / RotorPy under one duty profile
 ```
 
 Chip build (`make fw`) requires ESP-IDF **v6.0.x**; P9/P10 are hardware-gated.
