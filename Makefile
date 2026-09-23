@@ -2,7 +2,7 @@
 VENV := .venv
 PY   := $(VENV)/bin/python
 
-.PHONY: venv host sil fw test gate plot compare clean venv-visual sim2sim view visual
+.PHONY: venv host sil fw test gate plot compare clean venv-visual sim2sim view visual fly
 
 venv:
 	uv venv --python 3.13 $(VENV)
@@ -23,6 +23,11 @@ view:
 
 visual: sil
 	PYTHONPATH=. $(PY) -m plant.runner --visual --visual-rate 1.0 $(ARGS)
+
+# Take off, hover, and fly from this terminal. Other terminal: `make view`.
+# ARGS example: ARGS="--plant mujoco --hold-alt 1.5"
+fly: sil
+	PYTHONPATH=. $(PY) -m plant.runner --fly --visual $(ARGS)
 
 host:
 	cmake -S firmware -B build/host -DDRONE_HOST_LIB=ON

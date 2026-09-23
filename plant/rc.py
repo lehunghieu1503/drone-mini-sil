@@ -62,6 +62,17 @@ def sbus_to_throttle(v: int) -> float:
     return max(0.0, min(1.0, (v - SBUS_MIN) / (SBUS_MAX - SBUS_MIN)))
 
 
+def sticks_to_frame(roll=0.0, pitch=0.0, yaw=0.0, throttle=0.0, arm=False) -> bytes:
+    """One SBUS frame. Arm is channel 5; other channels stay 0 so the frame is not stuck."""
+    ch = [0] * 16
+    ch[0] = stick_to_sbus(roll)
+    ch[1] = stick_to_sbus(pitch)
+    ch[2] = throttle_to_sbus(throttle)
+    ch[3] = stick_to_sbus(yaw)
+    ch[ARM_CHANNEL] = SBUS_MAX if arm else SBUS_MIN
+    return sbus_encode(ch, 0)
+
+
 class RcScenario:
     """Deterministic stick scenario. Returns raw SBUS frames + normalized cmd."""
 

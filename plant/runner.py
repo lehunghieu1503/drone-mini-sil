@@ -32,7 +32,9 @@ from . import sil_proto as proto
 from .battery import Battery
 from .icm20948 import Icm20948
 from .log import CsvWriter
-from .rc import make_scenario, sbus_to_stick, sbus_to_throttle, ARM_CHANNEL, sbus_decode
+from .pilot import HoverPilot, Manual
+from .rc import make_scenario, sbus_to_stick, sbus_to_throttle, ARM_CHANNEL, sbus_decode, sticks_to_frame
+from .stick_keys import FLY_HELP, StickReader
 from .vehicle import make_plant
 from .visual_link import DEFAULT_HZ, DEFAULT_PORT, PoseSender
 
@@ -77,11 +79,32 @@ def _pace(t0_wall: float, t_virtual_s: float, rate: float,
         sleep(min(remaining, 0.05))
 
 
+def _prepare_pilot_args(args) -> int | None:
+    """Apply `--fly` defaults. Returns an exit code when the terminal cannot fly."""
+    if args.fly and args.hold_alt is None:
+        args.hold_alt = 1.0
+    if args.hold_alt is None:
+        return None
+    # The outer pilot speaks attitude sticks. Open-loop would ignore them.
+    args.mode = "attitude"
+    if args.fly and args.visual_rate == 0.0:
+        args.visual_rate = 1.0
+    if args.fly and abs(args.t_end - 10.0) < 1e-12:
+        args.t_end = 600.0
+    if args.fly and not sys.stdin.isatty():
+        sys.stderr.write("plant: --fly needs a terminal (keys are read from stdin)\n")
+        return EXIT_CONFIG
+    return None
+
+
 def run(args, metrics: dict | None = None) -> int:
     if args.transport_timeout <= 0:
         # settimeout(0) means non-blocking, not "no timeout"; reject it up front.
         sys.stderr.write("plant: --transport-timeout must be > 0\n")
         return proto.EXIT_PROTO
+    rejected = _prepare_pilot_args(args)
+    if rejected is not None:
+        return rejected
     n_ticks = max(1, int(round(args.t_end / P.DT)))
     try:
         plant = make_plant(args.plant, clean=args.clean_imu, seed=args.seed)
@@ -94,6 +117,7 @@ def run(args, metrics: dict | None = None) -> int:
     icm = Icm20948(args.seed, clean=args.clean_imu)
     batt = Battery(P.BATTERY)
     scen = make_scenario(args.scenario, n_ticks)
+    pilot = HoverPilot(args.hold_alt) if args.hold_alt is not None else None
 
     name = f"dm-sil-{secrets.token_hex(8)}"
     srv = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)
@@ -114,10 +138,19 @@ def run(args, metrics: dict | None = None) -> int:
 
     writer = None
     sender = None
+    keys = None
     aborted = True
     proc = None
     conn = None
     try:
+        if args.fly:
+            keys = StickReader()
+            keys.open()
+            sys.stderr.write(FLY_HELP)
+            sys.stderr.write(
+                f"plant: hold {args.hold_alt:.2f} m, mode attitude, "
+                f"plant {args.plant}, t_end {args.t_end:.0f}s\n"
+            )
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         srv.settimeout(args.transport_timeout)
         try:
@@ -157,6 +190,7 @@ def run(args, metrics: dict | None = None) -> int:
             "versions": f"numpy={_np.__version__}",
             "params_hash": params_hash,
             "reset_reason": args.reset_reason, "decimated": 0, "vbat_nan": 0,
+            **({"hold_alt": args.hold_alt} if pilot is not None else {}),
         })
         if args.visual:
             sender = PoseSender(args.visual_port, hz=args.visual_hz)
@@ -164,6 +198,7 @@ def run(args, metrics: dict | None = None) -> int:
         duty = np.zeros(4)
         vbat = P.BATTERY["vbat_nominal"]
         last_out_seq = -1
+        last_armed = False
         t0_wall = time.perf_counter()
         for tick in range(n_ticks):
             t_us = tick * P.DT_US
@@ -172,7 +207,17 @@ def run(args, metrics: dict | None = None) -> int:
             duty_sum = float(np.sum(duty))
             vbat = batt.step(P.DT, duty_sum)
 
-            raw = scen.raw(tick)
+            if pilot is not None:
+                manual = keys.poll(time.perf_counter()) if keys is not None else Manual()
+                if manual.quit:
+                    aborted = False
+                    break
+                cmd = pilot.command(
+                    plant.pos, plant.vel, plant.quat, vbat, last_armed, manual, P.DT,
+                )
+                raw = sticks_to_frame(cmd.roll, cmd.pitch, cmd.yaw, cmd.throttle, cmd.arm)
+            else:
+                raw = scen.raw(tick)
             ch = sbus_decode(raw)[0] if raw else [992] * 16
             valid = not (args.imu_invalid_after > 0.0
                          and t_us >= args.imu_invalid_after * 1e6)
@@ -207,6 +252,7 @@ def run(args, metrics: dict | None = None) -> int:
             last_out_seq = seq
             out = proto.unpack_out(body)
             duty = np.array(out["mot"], dtype=float)
+            last_armed = bool(out["armed"])
 
             writer.write_row(
                 t_us=t_us,
@@ -227,6 +273,13 @@ def run(args, metrics: dict | None = None) -> int:
 
             if sender is not None:
                 sender.publish(t_us + P.DT_US, args.plant, plant.pos, plant.quat)
+            if args.fly and tick % 500 == 0:
+                sys.stderr.write(
+                    f"\r  t={t_us * 1e-6:6.1f}s  armed={int(last_armed)}  "
+                    f"alt={plant.pos[2]:5.2f}/{pilot.alt_sp:4.2f} m  "
+                    f"xy=({plant.pos[0]:+5.2f},{plant.pos[1]:+5.2f})"
+                )
+                sys.stderr.flush()
             _pace(t0_wall, (tick + 1) * P.DT, args.visual_rate)
 
         aborted = False
@@ -235,8 +288,10 @@ def run(args, metrics: dict | None = None) -> int:
             metrics.update({
                 "alt": float(plant.pos[2]),
                 "vz": float(plant.vel[2]),
+                "x": float(plant.pos[0]),
+                "y": float(plant.pos[1]),
                 "motors": [float(m) for m in plant.motors],
-                "ticks": n_ticks,
+                "ticks": tick + 1,
             })
         return proto.EXIT_CLEAN
     except FloatingPointError:
@@ -246,6 +301,10 @@ def run(args, metrics: dict | None = None) -> int:
         sys.stderr.write(f"plant: protocol error: {exc}\n")
         return proto.EXIT_PROTO
     finally:
+        if keys is not None:
+            keys.close()
+        if args.fly:
+            sys.stderr.write("\n")
         if sender is not None:
             try:
                 sender.close()
@@ -311,7 +370,18 @@ def build_parser():
                     help="cap on pose datagrams per second (default 200)")
     ap.add_argument("--visual-rate", type=_rate_type, default=0.0,
                     help="0 = no throttle (default), 1.0 = realtime, <1 = slow-mo")
+    ap.add_argument("--hold-alt", type=_alt_type, default=None,
+                    help="external pilot: climb to this altitude (m) and hold position")
+    ap.add_argument("--fly", action="store_true",
+                    help="hold altitude and read WASD/QE/RF from this terminal")
     return ap
+
+
+def _alt_type(text: str) -> float:
+    value = float(text)
+    if not math.isfinite(value) or value < 0.0 or value > 30.0:
+        raise argparse.ArgumentTypeError("hold altitude must be a finite number in 0..30 m")
+    return value
 
 
 def main(argv=None) -> int:
