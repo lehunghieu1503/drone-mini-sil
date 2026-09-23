@@ -48,6 +48,18 @@ void ComplementaryEstimator::calibrateUpdate(const ImuSample& imu) {
     bias_[0] = sum_[0] * inv;
     bias_[1] = sum_[1] * inv;
     bias_[2] = sum_[2] * inv;
+    // Seed roll/pitch from the completing sample so the craft starts level with
+    // the bench before the first control tick (D7). Yaw is not observable here.
+    if (finite3(imu.accel_mps2)) {
+      const float* a = imu.accel_mps2;
+      const float an = std::sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
+      if (an > 1e-3f) {
+        roll_ = std::atan2(-a[1], -a[2]);
+        pitch_ = std::atan2(-a[0], -a[2]);
+        wrapPi(roll_);
+        wrapPi(pitch_);
+      }
+    }
     state_ = State::kDone;
   }
 }

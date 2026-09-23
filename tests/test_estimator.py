@@ -17,7 +17,8 @@ def est(lib):
     return {
         "reset": bind(lib, "estimator_reset", None),
         "calibrate": bind(lib, "estimator_calibrate", None,
-                          [ctypes.POINTER(ctypes.c_float), ctypes.c_uint64]),
+                          [ctypes.POINTER(ctypes.c_float), ctypes.POINTER(ctypes.c_float),
+                           ctypes.c_uint64]),
         "update": bind(lib, "estimator_update", None,
                        [ctypes.POINTER(ctypes.c_float), ctypes.POINTER(ctypes.c_float),
                         ctypes.c_float]),
@@ -41,7 +42,7 @@ def _calibrate(est, bias):
     est["reset"]()
     g = F3(*bias)
     for i in range(250):
-        est["calibrate"](g, i * 1000)
+        est["calibrate"](g, F3(0, 0, -9.81), i * 1000)
     assert est["calibrated"]() == 1
 
 
@@ -98,8 +99,23 @@ def test_t6_6_calib_rejects_motion(est):
     est["reset"]()
     g = F3(0.5, 0, 0)  # > 20 dps
     for i in range(500):
-        est["calibrate"](g, i * 1000)
+        est["calibrate"](g, F3(0, 0, -9.81), i * 1000)
     assert est["calibrated"]() == 0
+
+
+def test_t6_14_calib_seeds_attitude(est):
+    """D7: the completing sample seeds roll/pitch from accel, before any update."""
+    est["reset"]()
+    rad = math.radians(20.0)
+    ay = -math.sin(rad) * 9.81
+    az = -math.cos(rad) * 9.81
+    for i in range(200):
+        est["calibrate"](F3(0, 0, 0), F3(0, ay, az), i * 1000)
+    assert est["calibrated"]() == 1
+    assert abs(_attitude(est)[0] - 20.0) < 2.0
+    # The first update() is swallowed by decimation and must not wipe the seed.
+    est["update"](F3(0, 0, 0), F3(0, ay, az), 0.001)
+    assert abs(_attitude(est)[0] - 20.0) < 2.0
 
 
 def test_t6_13_imu_valid_debounce(est):

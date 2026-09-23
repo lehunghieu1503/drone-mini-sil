@@ -65,15 +65,16 @@ RateController::RateController(IMixer& mixer) : mixer_(mixer) {
 
 void RateController::reset() {
   for (int i = 0; i < 3; ++i) pids_[i].reset();
-  last_shift_ = 0.0f;
+  last_sat_pos_ = false;
+  last_sat_neg_ = false;
 }
 
 float RateController::update(const ImuSample& imu, const RateSp& sp, PwmCmd& out) {
   const float dt = kControlDtS;
-  // Previous saturation: shift < 0 => high side pulled down (positive sat),
-  // shift > 0 => low side pushed up (negative sat).
-  const bool sat_pos = last_shift_ < 0.0f;
-  const bool sat_neg = last_shift_ > 0.0f;
+  // Apply last tick's raw-channel saturation flags (D6). The mixer decides them
+  // before clipping, so an idle clip cannot make the anti-windup blind.
+  const bool sat_pos = last_sat_pos_;
+  const bool sat_neg = last_sat_neg_;
 
   // FRD gyro is nose-up positive; the controller works nose-down positive.
   const float meas_pitch = -imu.gyro_rps[1];
@@ -81,8 +82,10 @@ float RateController::update(const ImuSample& imu, const RateSp& sp, PwmCmd& out
   const float dp = pids_[1].step(sp.pitch, meas_pitch, dt, sat_pos, sat_neg);
   const float dy = pids_[2].step(sp.yaw, imu.gyro_rps[2], dt, sat_pos, sat_neg);
 
-  last_shift_ = mixer_.write(sp.throttle, dr, dp, dy, out);
-  return last_shift_;
+  const MixOut mix = mixer_.write(sp.throttle, dr, dp, dy, out);
+  last_sat_pos_ = mix.sat_pos;
+  last_sat_neg_ = mix.sat_neg;
+  return mix.shift;
 }
 
 AttitudeController::AttitudeController() {
@@ -111,11 +114,15 @@ void AttitudeController::update(const float sp[3], const float est[3], float dt,
 void rc_stick_to_rate_sp(const RcSample& rc, RateSp& out) {
   const float r = std::isfinite(rc.roll) ? rc.roll : 0.0f;
   const float p = std::isfinite(rc.pitch) ? rc.pitch : 0.0f;
-  const float y = std::isfinite(rc.yaw) ? rc.yaw : 0.0f;
   out.roll = r * kMaxRateRad;
   out.pitch = p * kMaxRateRad;  // nose-down positive
-  out.yaw = y * kMaxRateRad;
+  out.yaw = stick_yaw_to_rate(rc.yaw);
   out.throttle = std::isfinite(rc.throttle) ? rc.throttle : 0.0f;
+}
+
+float stick_yaw_to_rate(float stick) {
+  const float y = std::isfinite(stick) ? stick : 0.0f;
+  return y * kMaxRateRad;
 }
 
 void rc_stick_to_att_sp(const RcSample& rc, float out[3]) {

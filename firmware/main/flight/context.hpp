@@ -29,9 +29,15 @@ struct FlightContext {
   float ol_pitch = 0.0f;
   float ol_yaw = 0.0f;
 
+  // Last decoded RC frame. Held across silent ticks so the FSM can stay armed
+  // between real SBUS frames without re-stamping t_us (D1).
+  RcSample rc_hold{};
+  bool have_rc = false;
+
   // Outputs written by ControlLoop::tick (for telemetry / logging).
   float sat_shift = 0.0f;
   uint32_t tick = 0;
+  bool was_armed = false;  // arm-edge detector for rate integrator reset (D7)
 };
 
 }  // namespace drone

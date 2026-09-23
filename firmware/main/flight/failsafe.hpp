@@ -13,6 +13,7 @@ enum FailsafeReason : uint32_t {
   kReasonImuInvalid = 1u << 2,
   kReasonVbatCrit = 1u << 3,
   kReasonBootLatch = 1u << 4,
+  kReasonVbatNan = 1u << 5,
 };
 
 // esp_reset_reason_t values (mirrored; flight/ cannot include IDF headers).
@@ -25,9 +26,11 @@ inline constexpr uint64_t kRcTimeoutUs = 100000;  // 100 ms virtual time
 inline constexpr int kRcFrameLostN = 3;
 inline constexpr int kArmMinGoodFrames = 10;
 inline constexpr int kImuInvalidDebounce = 5;
+inline constexpr int kVbatCritSamples = 20;  // consecutive samples below crit
 inline constexpr float kVbatWarn = 3.5f;
 inline constexpr float kVbatCrit = 3.3f;
 inline constexpr float kArmThrottleMax = 0.05f;
+inline constexpr float kArmStickMax = 0.05f;
 
 class FailsafeFsm final : public IFailsafe {
  public:
@@ -52,12 +55,14 @@ class FailsafeFsm final : public IFailsafe {
   bool boot_latched_ = false;
   bool vbat_nan_ = false;
   bool arm_test_prev_ = false;
+  bool armed_switch_prev_ = false;
   uint32_t reason_ = 0;
   uint64_t last_good_us_ = 0;
   bool have_frame_ = false;
   int good_frames_ = 0;
   int lost_count_ = 0;
   int imu_bad_count_ = 0;
+  int vbat_crit_count_ = 0;
 };
 
 }  // namespace drone

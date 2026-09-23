@@ -34,6 +34,15 @@ struct PwmCmd {
   float mot[4];  // duty [0, 1], mot[0..3] = Mot1..Mot4 = GPIO0..3
 };
 
+// Mixer result: the desaturation delta plus the pre-clip saturation flags. The
+// flags are the source of the rate anti-windup, so they must survive even when
+// the idle path clips the collective instead of desaturating (D5/D6).
+struct MixOut {
+  float shift;    // delta already applied to every channel (0 on the idle path)
+  bool sat_pos;   // a raw channel exceeded 1 this tick
+  bool sat_neg;   // a raw channel went below 0 this tick
+};
+
 struct RateSp {
   float roll;      // rad/s
   float pitch;     // rad/s
@@ -64,8 +73,8 @@ class IHal {
 class IMixer {
  public:
   virtual ~IMixer() = default;
-  // Returns the desaturation shift (delta already applied to all channels).
-  virtual float write(float thr, float roll, float pitch, float yaw, PwmCmd& out) = 0;
+  // Returns the desaturation shift and the raw-channel saturation flags.
+  virtual MixOut write(float thr, float roll, float pitch, float yaw, PwmCmd& out) = 0;
 };
 
 class IPid {

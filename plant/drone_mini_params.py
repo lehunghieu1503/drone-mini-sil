@@ -42,6 +42,10 @@ OMEGA_MAX_RAD_S = 2500.0
 INERTIA = (1.4e-5, 1.4e-5, 2.6e-5)  # kg*m^2, roll, pitch, yaw
 LINEAR_DRAG = (0.0, 0.0, 0.0)
 ANGULAR_DRAG = (0.0, 0.0, 0.0)
+# ARM_LENGTH_M is the Cartesian offset (±d, ±d) of each motor, so the actual
+# center-to-motor radius of the model is d*sqrt(2) (60.8 mm), not 43 mm. Keep
+# ROTOR_POSITIONS as measured/assumed; only the derived radius is named here.
+CENTER_TO_MOTOR_M = ARM_LENGTH_M * math.sqrt(2.0)
 
 # --- Mixer / rotor geometry (documentation only; never an oracle) -----------
 # Mot1 rear-right CW, Mot2 front-right CCW, Mot3 rear-left CCW, Mot4 front-left CW.
@@ -78,13 +82,15 @@ BATTERY = {
     "vbat_crit": 3.3,
     "bod_mv": 3000.0,
     "ldo_dropout_v": 0.220,   # ASSUMED(A10)
+    # Duty the pack must supply at hover, from ASSUMPTIONS only (never plant
+    # state). Used to pick a default SoC whose loaded voltage is nominal (D9).
+    "hover_duty": math.sqrt(MASS_KG * GRAVITY / (4.0 * K_T)) / OMEGA_MAX_RAD_S,
 }
 
 
 def hover_duty_nominal() -> float:
     """Hover duty from ASSUMPTIONS only (never from plant state) — RT#4."""
-    omega_h = math.sqrt(MASS_KG * GRAVITY / (4.0 * K_T))
-    return omega_h / OMEGA_MAX_RAD_S
+    return BATTERY["hover_duty"]
 
 
 def pwm_to_omega(duty, vbat: float):

@@ -353,6 +353,12 @@ Hãy tự kiểm chứng với `tau_x = Σ yᵢ·Tᵢ` (công thức trong `_der
 dương quanh x (quy tắc bàn tay phải: y hướng lên z) = **cánh trái lên, cánh phải
 xuống** = roll right-wing-down dương. Nhất quán với estimator và mixer.
 
+> **`d` là gì?** `ARM_LENGTH_M` (0.043 m) là **offset Descartes** của mỗi motor:
+> tọa độ `(±d, ±d, 0)` trong `ROTOR_POSITIONS`. Khoảng cách thật từ tâm PCB tới
+> trục motor là `d√2` = 60.8 mm, và code đặt tên nó là `CENTER_TO_MOTOR_M`
+> (`plant/drone_mini_params.py`). Đừng nhầm `d` với bán kính mô hình. Số 0.043 là
+> giả định **A2**; chỉ đổi tọa độ sau khi đo PCB (Tier C).
+
 ---
 
 ## 8. Checkpoint

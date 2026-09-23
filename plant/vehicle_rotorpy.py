@@ -35,7 +35,13 @@ class RotorPyPlant:
         self.state["rotor_speeds"] = np.zeros(4)
 
     def step(self, dt, duty, vbat):
-        om = np.asarray(P.pwm_to_omega(duty, vbat), dtype=float)
+        d = np.asarray(duty, dtype=float)
+        # The firmware mixer order is Mot1..Mot4 (rear-right, front-right,
+        # rear-left, front-left). RotorPy's rotor order is r1=front-left (Mot4),
+        # r2=front-right (Mot2), r3=rear-right (Mot1), r4=rear-left (Mot3); the
+        # yaw-reaction signs already match, only the index differs (D11).
+        cmd = [d[3], d[1], d[0], d[2]]
+        om = np.asarray(P.pwm_to_omega(cmd, vbat), dtype=float)
         control = {"cmd_motor_speeds": om}
         self.state = self.veh.step(self.state, control, dt)
         if not np.all(np.isfinite(self.state["x"])) or not np.all(np.isfinite(self.state["v"])):

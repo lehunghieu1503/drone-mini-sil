@@ -30,7 +30,9 @@ def main(argv=None) -> int:
     ap.add_argument("b")
     ap.add_argument("--align", default="arm", choices=["start", "arm", "t0"])
     ap.add_argument("--tol", type=float, default=0.15)
-    ap.add_argument("--max-gap", type=float, default=0.0)
+    ap.add_argument("--max-gap", type=float, default=0.0,
+                    help="time span in us; samples with no neighbour within it "
+                         "are excluded from the residual (default 5*median dt)")
     ap.add_argument("--csv-out", default=None)
     args = ap.parse_args(argv)
 
@@ -44,7 +46,12 @@ def main(argv=None) -> int:
     tb = align_time(lb["t_us"], lb["armed"] if lb.has("armed") else None, args.align)
 
     dt_med = jitter_stats(la["t_us"])["median"]
-    max_gap = args.max_gap if args.max_gap > 0 else 5.0 * dt_med
+    if args.max_gap > 0:
+        max_gap = args.max_gap
+    else:
+        # A log with < 3 samples has median dt 0; skip gap filtering rather than
+        # marking every sample isolated and vacuously passing the gate.
+        max_gap = 5.0 * dt_med if dt_med > 0 else None
 
     print(f"# A={pathlib.Path(args.a).name} kind={la.meta.get('kind', '?')} "
           f"aborted={int(la.aborted)}")
@@ -62,7 +69,7 @@ def main(argv=None) -> int:
         if not (la.has(name) and lb.has(name)):
             continue
         b_on_a = _resample(ta, tb, lb[name])
-        r = residual(la[name], b_on_a, max_gap=max_gap)
+        r = residual(la[name], b_on_a, max_gap=max_gap, t=ta)
         rows.append(f"{name},{r['max_abs']:.6g},{r['rms']:.6g},{r['corr']:.4f},"
                     f"{r['n_rejected']}")
         if r["max_abs"] > args.tol:

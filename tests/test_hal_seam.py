@@ -158,3 +158,67 @@ def test_t1_5_hello_size_mismatch():
     t.join(timeout=5)
     assert not errors, errors
     assert r.returncode == 2, (r.returncode, r.stderr.decode())
+
+
+def test_t1_16_fw_out_tick_increments():
+    """The firmware, not the plant, owns SilOut.tick; it starts at 1 and grows."""
+    name = _unique("tick")
+    ticks = []
+
+    def handler(conn):
+        buf = conn.recv(4096)
+        sp.unpack_msg(buf)
+        conn.sendall(sp.pack_msg(sp.MsgType.ACK, 0, sp.pack_hello()))
+        for i in range(5):
+            state = sp.pack_state(t_us=(i + 1) * 1000, gyro_rps=(0, 0, 0),
+                                  accel_mps2=(0, 0, -9.81), vbat=3.8, rc_raw=b"")
+            conn.sendall(sp.pack_msg(sp.MsgType.STATE, i, state))
+            typ, _seq, body = sp.unpack_msg(conn.recv(4096))
+            if typ == sp.MsgType.FW_OUT:
+                ticks.append(sp.unpack_out(body)["tick"])
+        conn.sendall(sp.pack_msg(sp.MsgType.BYE, 0))
+
+    t, errors = _serve(name, handler)
+    r = _run_runner(name)
+    t.join(timeout=5)
+    assert not errors, errors
+    assert r.returncode == 0, r.stderr.decode()
+    assert ticks == [1, 2, 3, 4, 5]
+
+
+def test_t3_21_transport_timeout_zero_rejected():
+    """0 would mean 'no timeout' on Linux, so it must be rejected before connect."""
+    name = _unique("tzero")
+    seen = {"connected": False}
+
+    def handler(conn):
+        seen["connected"] = True
+
+    t, errors = _serve(name, handler)
+    r = _run_runner_args(name, ["--transport-timeout", "0"])
+    t.join(timeout=1)
+    assert r.returncode == 2, (r.returncode, r.stderr.decode())
+    assert seen["connected"] is False
+
+
+def test_t3_22_hello_timeout_exits_3():
+    """A peer that never ACKs must time out (exit 3), not be a protocol error."""
+    name = _unique("hellostall")
+
+    def handler(conn):
+        conn.recv(4096)
+        time.sleep(3.0)
+
+    t, errors = _serve(name, handler)
+    r = _run_runner_args(name, ["--transport-timeout", "1"])
+    t.join(timeout=6)
+    assert not errors, errors
+    assert r.returncode == 3, (r.returncode, r.stderr.decode())
+
+
+def test_runner_rejects_transport_timeout_zero(tmp_path):
+    from plant import runner
+
+    args = runner.build_parser().parse_args(
+        ["--transport-timeout", "0", "--t-end", "0.1", "--log", str(tmp_path / "x.csv")])
+    assert runner.run(args) == 2

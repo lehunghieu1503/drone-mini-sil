@@ -93,13 +93,13 @@ SilHal::IoResult SilHal::recvInto(uint8_t* buf, int cap, int& out_len, wire::Hdr
 SilHal::IoResult SilHal::helloAck() {
   wire::SilHello local{};
   wire::fillHello(local);
-  if (sendMsg(wire::MsgType::kHello, &local, sizeof(local)) != IoResult::kOk) {
-    return IoResult::kClosed;
-  }
+  const IoResult sent = sendMsg(wire::MsgType::kHello, &local, sizeof(local));
+  if (sent != IoResult::kOk) return sent;  // propagate kTimeout / kClosed
   int len = 0;
   wire::Hdr h{};
   const uint8_t* payload = nullptr;
-  if (recvInto(rx_, sizeof(rx_), len, &h, &payload) != IoResult::kOk) return IoResult::kClosed;
+  const IoResult r = recvInto(rx_, sizeof(rx_), len, &h, &payload);
+  if (r != IoResult::kOk) return r;  // propagate kTimeout / kClosed as-is
   if (h.type != static_cast<uint8_t>(wire::MsgType::kAck) || h.len != sizeof(wire::SilHello)) {
     return IoResult::kProto;
   }
@@ -191,7 +191,7 @@ bool SilHal::vbatRead(float& volts) {
 void SilHal::log(const char* msg) { std::fprintf(stderr, "[sil] %s\n", msg); }
 
 void SilHal::setStatus(bool armed, bool failsafe, bool imu_valid, const float est[3],
-                       float sat_shift) {
+                       float sat_shift, uint32_t tick) {
   out_.armed = armed ? 1 : 0;
   out_.failsafe = failsafe ? 1 : 0;
   out_.imu_valid = imu_valid ? 1 : 0;
@@ -199,6 +199,7 @@ void SilHal::setStatus(bool armed, bool failsafe, bool imu_valid, const float es
   out_.pitch_est = est[1];
   out_.yaw_est = est[2];
   out_.sat_shift = sat_shift;
+  out_.tick = tick;
 }
 
 }  // namespace drone

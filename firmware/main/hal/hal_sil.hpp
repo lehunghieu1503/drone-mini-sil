@@ -38,7 +38,8 @@ class SilHal final : public IHal {
   bool vbatRead(float& volts) override;
   void log(const char* msg) override;
 
-  void setStatus(bool armed, bool failsafe, bool imu_valid, const float est[3], float sat_shift);
+  void setStatus(bool armed, bool failsafe, bool imu_valid, const float est[3], float sat_shift,
+                 uint32_t tick);
   const wire::SilOut& lastOut() const { return out_; }
   int fd() const { return fd_; }
 

@@ -1,4 +1,5 @@
 idf_component_register(SRCS "app_main.cpp"
+                            "hal/hal_hw.cpp"
                        INCLUDE_DIRS ".")
 
 # gnu++20 must be pinned at component level: IDF appends -std=gnu++26 after
@@ -9,6 +10,9 @@ target_compile_options(${COMPONENT_LIB} PRIVATE -std=gnu++20)
 add_subdirectory(flight)
 target_link_libraries(${COMPONENT_LIB} INTERFACE flight)
 
+# hal/hal_hw.cpp is part of SRCS, so it is compiled in every build; the `#error`
+# inside it fires as soon as CONFIG_DRONE_HIL is enabled (P9 removes that).
+#
 # CONFIG_DRONE_HIL is dropped silently if Kconfig.projbuild is missing, which
 # would compile out the whole HIL transport. Fail loudly instead (RT#11).
 if(CONFIG_DRONE_HIL)

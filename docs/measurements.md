@@ -44,7 +44,7 @@ Authoritative copy is the `ASSUMPTIONS` dict. Summary:
 | §9.2 mixer sign | software-verified, hardware-gated by A1 | `tests/test_mixer.py` T2.1–T2.11 |
 | §9.5 log schema / overlay | pass — common 23-column schema, GATE PASS on identical runs | `tools/compare_logs.py`, T8.x |
 | §9.1/§9.4 hover | pass **under assumptions A3/A5** — level (<0.02°), yaw drift <0.1°/10 s | `tests/test_hover_sil.py` T6.7–T6.12 |
-| §9.3 failsafe | pass — RC-loss latches within 100 ms virtual (+1 tick), outputs 0 | `tests/test_power_sil.py` T7.15 |
+| §9.3 failsafe | pass — last frame at 2.999 s, latch at 3.099 s, outputs 0; 14 ms cadence holds armed | `tests/test_power_sil.py` T7.15, T7.20, T7.21 |
 | Safety invariant `armed=0 ⇒ 0` | pass for all flag combinations | `tests/test_output_gate.py` T1.8 |
 
 ## Tuning results (2026-09-22)

@@ -75,6 +75,7 @@ bool parse(int argc, char** argv, Args& a) {
       return false;
     }
   }
+  if (a.timeout_s <= 0) return false;  // 0 would mean "no timeout" on Linux
   return a.sock != nullptr;
 }
 
@@ -95,7 +96,12 @@ int main(int argc, char** argv) {
     std::fprintf(stderr, "sil: connect failed\n");
     return 3;
   }
-  if (hal.helloAck() != drone::SilHal::IoResult::kOk) {
+  const drone::SilHal::IoResult hello = hal.helloAck();
+  if (hello == drone::SilHal::IoResult::kTimeout) {
+    std::fprintf(stderr, "sil: HELLO timed out\n");
+    return 3;
+  }
+  if (hello != drone::SilHal::IoResult::kOk) {
     std::fprintf(stderr, "sil: HELLO failed (size/version mismatch)\n");
     return 2;
   }
@@ -136,12 +142,13 @@ int main(int argc, char** argv) {
 
     float est_att[3];
     ctx.est.getAttitude(est_att);
-    hal.setStatus(ctx.fs.armed(), ctx.fs.active(), ctx.est.imuValid(), est_att, ctx.sat_shift);
+    hal.setStatus(ctx.fs.armed(), ctx.fs.active(), ctx.est.imuValid(), est_att, ctx.sat_shift,
+                  ctx.tick);
 
     const drone::SilHal::IoResult s = hal.sendOut();
     if (s != drone::SilHal::IoResult::kOk) {
       std::fprintf(stderr, "sil: send failed at tick %u\n", ctx.tick);
-      return 2;
+      return (s == drone::SilHal::IoResult::kTimeout) ? 3 : 2;
     }
   }
   hal.sendBye();

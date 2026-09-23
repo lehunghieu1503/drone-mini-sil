@@ -25,3 +25,20 @@ def test_t3_7_brownout_and_rail_flags():
     b2.step(P.DT, 4.0)
     assert b2.brownout is True
     assert b2.rail_low is True
+
+
+def test_t3_8_default_soc_is_hover_voltage():
+    """D9: the default SoC puts the loaded voltage at nominal at hover duty."""
+    b = Battery(P.BATTERY)
+    v = b.step(P.DT, 4.0 * P.hover_duty_nominal())
+    assert abs(v - P.BATTERY["vbat_nominal"]) < 0.05
+
+
+def test_t3_9_drain_rate_matches_capacity():
+    b = Battery(P.BATTERY, initial_charge=1.0)
+    c0 = b.charge
+    i = b.current(4.0)
+    for _ in range(1000):
+        b.step(P.DT, 4.0)
+    expected = c0 - (i * 1000 * P.DT) / (2.0 * 3600.0)
+    assert b.charge == pytest.approx(expected, rel=1e-3)

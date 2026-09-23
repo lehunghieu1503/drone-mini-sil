@@ -7,6 +7,7 @@ import pytest
 
 from _bind import bind
 from plant import drone_mini_params as P
+from plant.battery import Battery
 from plant.vehicle import make_plant
 
 F4 = ctypes.c_float * 4
@@ -53,6 +54,49 @@ def test_t3_5_motor_step_tau():
     for _ in range(steps):
         plant.step(P.DT, [1, 1, 1, 1], vbat)
     assert plant.motors[0] / om_max == pytest.approx(1.0 - math.exp(-1.0), rel=0.02)
+
+
+def test_t3_11_arm_geometry():
+    """D10: positions are Descartes offsets; the model radius is d*sqrt(2)."""
+    for pos in P.ROTOR_POSITIONS:
+        assert abs(pos[0]) == pytest.approx(P.ARM_LENGTH_M)
+        assert abs(pos[1]) == pytest.approx(P.ARM_LENGTH_M)
+        assert math.hypot(pos[0], pos[1]) == pytest.approx(P.CENTER_TO_MOTOR_M)
+    assert P.CENTER_TO_MOTOR_M == pytest.approx(P.ARM_LENGTH_M * math.sqrt(2.0))
+
+
+def _spin_to_hover(plant, hover):
+    """Start at alt=1 with motors already at steady-state hover speed."""
+    plant.reset(alt=1.0)
+    plant.x[13:17] = P.pwm_to_omega(hover, P.BATTERY["vbat_nominal"])
+
+
+def test_t3_12_hover_equilibrium_default_soc():
+    """D9: hover duty on the default pack is a true equilibrium.
+
+    Open-loop from rest cannot hover (the craft falls during motor spool-up), so
+    the plant starts at the steady-state hover speed. The ground clamp is not what
+    makes this pass: alt starts at 1 m.
+    """
+    hover = P.hover_duty_nominal()
+
+    plant = make_plant("rk4", clean=True, seed=0)
+    _spin_to_hover(plant, hover)
+    b = Battery(P.BATTERY)
+    for _ in range(round(0.5 / P.DT)):
+        v = b.step(P.DT, 4.0 * hover)
+        plant.step(P.DT, [hover] * 4, v)
+    assert abs(plant.pos[2] - 1.0) < 0.05
+    assert abs(plant.vel[2]) < 0.05
+
+    # A full pack at the same duty and altitude climbs.
+    plant2 = make_plant("rk4", clean=True, seed=0)
+    _spin_to_hover(plant2, hover)
+    b2 = Battery(P.BATTERY, initial_charge=1.0)
+    for _ in range(round(0.5 / P.DT)):
+        v = b2.step(P.DT, 4.0 * hover)
+        plant2.step(P.DT, [hover] * 4, v)
+    assert plant2.pos[2] > 1.05
 
 
 def test_t3_10_flat_accel_and_signs(mixer):

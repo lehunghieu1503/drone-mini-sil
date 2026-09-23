@@ -56,11 +56,11 @@ def test_t2_5_yaw_pos(mixer):
     assert m == pytest.approx([0.3, 0.7, 0.7, 0.3], abs=1e-6)
 
 
-def test_t2_6_clip_low(mixer):
+def test_t2_6_idle_clip_no_desat(mixer):
+    """D5: idle must clip, not lift the collective (shift is 0)."""
     m, shift = mixer(0.0, 0.0, 0.0, 0.5)
-    assert min(m) >= -1e-6
-    assert shift > 0
-    assert all(x >= 0.0 for x in m)
+    assert m == pytest.approx([0.0, 0.5, 0.5, 0.0], abs=1e-6)
+    assert shift == pytest.approx(0.0)
 
 
 def test_t2_7_clip_high(mixer):
@@ -108,3 +108,47 @@ def test_t2_11_sign_vs_a1(mixer, axis):
     for i, expected in enumerate(A1_SIGN[axis]):
         delta = m[i] - 0.5
         assert math.copysign(1, delta) == expected or abs(delta) < 1e-9
+
+
+def test_t2_12_idle_no_collective_lift(mixer):
+    """D5: an idle differential must not be desaturated up to 0.80."""
+    m, shift = mixer(0.02, 0.40, 0.0, 0.0)
+    assert m == pytest.approx([0.0, 0.0, 0.42, 0.42], abs=1e-6)
+    assert max(m) <= 0.02 + 0.40 + 1e-6
+    assert shift == pytest.approx(0.0)
+
+
+def _flags_fn(lib):
+    return bind(lib, "mixer_write_flags", ctypes.c_int,
+                [ctypes.c_float, ctypes.c_float, ctypes.c_float, ctypes.c_float,
+                 ctypes.POINTER(ctypes.c_float)])
+
+
+def test_t2_13_sat_flags_from_raw(lib):
+    """D6: flags come from the raw channels, not the clipped duty."""
+    fn = _flags_fn(lib)
+    out = (ctypes.c_float * 4)()
+    # Idle + roll: raw negative channels -> sat_neg only, output clipped.
+    flags = fn(0.02, 0.40, 0.0, 0.0, out)
+    assert flags & 2 and not (flags & 1)
+    assert list(out) == pytest.approx([0.0, 0.0, 0.42, 0.42], abs=1e-6)
+    # write(1, 0, 0.5, 0): raw all >= 0.5 -> high side only.
+    flags = fn(1.0, 0.0, 0.5, 0.0, out)
+    assert flags & 1 and not (flags & 2)
+    assert list(out) == pytest.approx([1.0, 0.0, 1.0, 0.0], abs=1e-6)
+
+
+def test_t2_14_rate_remembers_sat_flags(lib):
+    """D6: the rate controller carries the pre-clip flags into the next tick."""
+    F3 = ctypes.c_float * 3
+    rate_reset = bind(lib, "rate_reset", None)
+    rate_update = bind(lib, "rate_update", ctypes.c_float,
+                       [ctypes.POINTER(ctypes.c_float), ctypes.POINTER(ctypes.c_float),
+                        ctypes.c_float, ctypes.POINTER(ctypes.c_float)])
+    rate_sat = bind(lib, "rate_sat_flags", ctypes.c_int, [ctypes.POINTER(ctypes.c_int)])
+    out = (ctypes.c_float * 4)()
+    rate_reset()
+    rate_update(F3(0.0, 0.0, 0.0), F3(1.0, 0.0, 0.0), 0.02, out)  # idle, big roll sp
+    flags = (ctypes.c_int * 2)()
+    rate_sat(flags)
+    assert flags[1] == 1 and flags[0] == 0  # sat_neg remembered, no high sat

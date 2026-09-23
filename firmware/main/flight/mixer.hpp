@@ -9,10 +9,13 @@
 //   pitch+       +           -           +           -   (pitch+ = nose down)
 //   yaw+         -           +           +           -
 //
-// Desaturation contract (single definition): write() returns `shift`, the
-// delta already applied to every channel. shift > 0 means the low side was
-// pushed up, shift < 0 means the high side was pulled down. Callers (the rate
-// anti-windup) map sign -> sat_neg / sat_pos.
+// Desaturation contract (single definition): write() returns the `shift` delta
+// already applied to every channel. shift > 0 means the low side was pushed up,
+// shift < 0 means the high side was pulled down. At or below idle throttle the
+// differential is clipped instead, so a stick cannot lift the collective (D5).
+//
+// The sat_pos/sat_neg flags come from the raw channels *before* any shift or
+// clip, and feed the rate anti-windup on the next tick (D6).
 #pragma once
 
 #include "flight/ports.hpp"
@@ -21,7 +24,7 @@ namespace drone {
 
 class QuadXMixer final : public IMixer {
  public:
-  float write(float thr, float roll, float pitch, float yaw, PwmCmd& out) override;
+  MixOut write(float thr, float roll, float pitch, float yaw, PwmCmd& out) override;
 
  private:
   static float clampf(float v, float lo, float hi);

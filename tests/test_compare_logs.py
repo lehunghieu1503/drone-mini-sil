@@ -56,10 +56,37 @@ def test_t8_5_gap_rejected(tmp_path):
     path = _write(tmp_path / "a.csv", gap_at=200)
     log = load_log(path)
     t = log["t_us"]
-    dt = np.diff(t)
-    med = np.median(dt)
-    r = residual(t[1:], t[:-1], max_gap=5 * med)
+    med = np.median(np.diff(t))
+    r = residual(log["gyro_x"], log["gyro_x"], max_gap=5 * med, t=t)
     assert r["n_rejected"] >= 1
+
+
+def test_t8_9_gap_isolated_spike_excluded():
+    """max_gap is a time span: a spike on a logging gap is not a tracking error."""
+    t = np.arange(100, dtype=float) * 1000.0
+    t[50:] += 50_000.0
+    a = np.zeros(100)
+    b = np.zeros(100)
+    b[49] = 1.0  # spike on the sample adjacent to a 50 ms gap
+    r = residual(a, b, max_gap=5_000.0, t=t)
+    assert r["n_rejected"] >= 1
+    assert r["max_abs"] < 0.15
+
+
+def test_t8_10_matched_spike_still_counts():
+    t = np.arange(100, dtype=float) * 1000.0
+    a = np.zeros(100)
+    b = np.zeros(100)
+    b[50] = 0.2
+    r = residual(a, b, max_gap=5_000.0, t=t)
+    assert r["n_rejected"] == 0
+    assert r["max_abs"] == pytest.approx(0.2)
+
+
+def test_t8_11_gate_ignores_gap_spike(tmp_path):
+    a = _write(tmp_path / "a.csv", gap_at=300)
+    b = _write(tmp_path / "b.csv", gap_at=300, spike=1.0)
+    assert compare_main([str(a), str(b)]) == 0
 
 
 def test_t8_8_jitter_stats(tmp_path):

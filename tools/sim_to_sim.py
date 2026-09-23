@@ -52,6 +52,7 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     print(f"{'plant':10s} {'finite':6s} {'a_z@hover':>10s} {'roll_rate_frd':>14s} {'alt':>8s}")
+    failed = False
     for name in args.plants.split(","):
         name = name.strip()
         try:
@@ -61,9 +62,10 @@ def main(argv=None) -> int:
                   f"{m['roll_rate_frd']:14.3f} {m['alt']:8.3f}")
         except ImportError as exc:
             print(f"{name:10s} skipped (missing dependency: {exc})")
-        except Exception as exc:  # noqa: BLE001 - report and continue
+        except Exception as exc:  # noqa: BLE001 - report, fail the run
             print(f"{name:10s} ERROR {type(exc).__name__}: {exc}")
-    return 0
+            failed = True
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

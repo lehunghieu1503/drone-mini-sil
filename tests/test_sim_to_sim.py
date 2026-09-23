@@ -72,3 +72,23 @@ def test_sim2sim_rate_signs_and_magnitude_match():
         assert np.sign(rk4[idx]) == sign, f"{axis}: RK4 sign"
         assert np.sign(mj[idx]) == sign, f"{axis}: MuJoCo sign"
         assert mj[idx] == pytest.approx(rk4[idx], rel=TOL_RATE_REL), f"{axis}: magnitude"
+
+
+def test_sim_to_sim_runtime_error_exits_1(monkeypatch):
+    from tools import sim_to_sim
+
+    def boom(name, clean=False, seed=0):
+        raise RuntimeError("kaboom")
+
+    monkeypatch.setattr(sim_to_sim, "make_plant", boom)
+    assert sim_to_sim.main(["--plants", "rk4"]) == 1
+
+
+def test_sim_to_sim_import_error_skips(monkeypatch):
+    from tools import sim_to_sim
+
+    def boom(name, clean=False, seed=0):
+        raise ImportError("missing dep")
+
+    monkeypatch.setattr(sim_to_sim, "make_plant", boom)
+    assert sim_to_sim.main(["--plants", "rk4"]) == 0

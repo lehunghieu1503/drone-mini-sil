@@ -65,9 +65,15 @@ int output_stage_apply(const float* in4, int armed, int failsafe, int imu_valid)
 // --- Mixer -----------------------------------------------------------------
 float mixer_write(float thr, float roll, float pitch, float yaw, float* out4) {
   drone::PwmCmd p{};
-  const float shift = g_mixer.write(thr, roll, pitch, yaw, p);
+  const drone::MixOut r = g_mixer.write(thr, roll, pitch, yaw, p);
   for (int i = 0; i < 4; ++i) out4[i] = p.mot[i];
-  return shift;
+  return r.shift;
+}
+int mixer_write_flags(float thr, float roll, float pitch, float yaw, float* out4) {
+  drone::PwmCmd p{};
+  const drone::MixOut r = g_mixer.write(thr, roll, pitch, yaw, p);
+  for (int i = 0; i < 4; ++i) out4[i] = p.mot[i];
+  return (r.sat_pos ? 1 : 0) | (r.sat_neg ? 2 : 0);
 }
 
 // --- SBUS parser -----------------------------------------------------------
@@ -92,6 +98,8 @@ void pid_reset(void) { g_pid.reset(); }
 float pid_step(float sp, float meas, float dt, int sat_pos, int sat_neg) {
   return g_pid.step(sp, meas, dt, sat_pos != 0, sat_neg != 0);
 }
+// Real function from libflight (not a host-only shim); yaw stick -> yaw rate.
+float stick_yaw_to_rate(float stick) { return drone::stick_yaw_to_rate(stick); }
 
 // --- Rate controller -------------------------------------------------------
 void rate_reset(void) { g_rate.reset(); }
@@ -104,6 +112,11 @@ float rate_update(const float* gyro3, const float* sp3, float throttle, float* o
   const float shift = g_rate.update(imu, sp, p);
   for (int i = 0; i < 4; ++i) out4[i] = p.mot[i];
   return shift;
+}
+int rate_sat_flags(int* out2) {
+  out2[0] = g_rate.lastSatPos() ? 1 : 0;
+  out2[1] = g_rate.lastSatNeg() ? 1 : 0;
+  return 2;
 }
 
 // --- Flight params ---------------------------------------------------------
@@ -122,12 +135,14 @@ int flight_params_get(float* out) {
 
 // --- Estimator -------------------------------------------------------------
 void estimator_reset(void) { g_est.reset(); }
-void estimator_calibrate(const float* gyro3, uint64_t t_us) {
+void estimator_calibrate(const float* gyro3, const float* accel3, uint64_t t_us) {
   drone::ImuSample s{};
-  for (int i = 0; i < 3; ++i) s.gyro_rps[i] = gyro3[i];
+  for (int i = 0; i < 3; ++i) {
+    s.gyro_rps[i] = gyro3[i];
+    s.accel_mps2[i] = accel3[i];
+  }
   s.t_us = t_us;
   s.valid = true;
-  s.accel_mps2[2] = -9.81f;
   g_est.calibrateUpdate(s);
 }
 namespace {

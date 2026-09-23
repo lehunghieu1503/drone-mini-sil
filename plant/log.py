@@ -124,22 +124,42 @@ def jitter_stats(t_us):
     }
 
 
-def residual(a, b, max_gap=None):
-    """Residual between two aligned signals a, b (same length)."""
+def residual(a, b, max_gap=None, t=None):
+    """Residual between two aligned signals a, b (same length).
+
+    `max_gap` is a *time* span in the same units as `t` (us). A sample whose
+    neighbour in `t` is farther than `max_gap` is a logging gap, not a control
+    event, so it is excluded from max/rms/corr. This keeps a signal spike that
+    happens to sit on a gap from being counted as a tracking error (T8.9).
+    """
     a = np.asarray(a, dtype=float)
     b = np.asarray(b, dtype=float)
     n = min(len(a), len(b))
     a, b = a[:n], b[:n]
+    if max_gap is not None and t is None:
+        raise ValueError("residual: max_gap is a time span and needs t")
     diff = a - b
-    if max_gap is not None and n > 3:
-        mask = np.abs(diff) <= max_gap
-        n_rejected = int(np.sum(~mask))
-    else:
-        n_rejected = 0
-    corr = float(np.corrcoef(a, b)[0, 1]) if n > 2 and a.std() > 0 and b.std() > 0 else 1.0
+    keep = np.ones(n, dtype=bool)
+    if t is not None and max_gap is not None and n > 1:
+        tt = np.asarray(t, dtype=float)
+        if tt.shape[0] < n:
+            raise ValueError("residual: t shorter than the signals")
+        tt = tt[:n]
+        gap = np.abs(np.diff(tt)) > max_gap
+        isolated = np.zeros(n, dtype=bool)
+        isolated[1:] |= gap
+        isolated[:-1] |= gap
+        keep = ~isolated
+    n_rejected = int(np.sum(~keep))
+    kept = diff[keep]
+    max_abs = float(np.max(np.abs(kept))) if kept.size else 0.0
+    rms = float(np.sqrt(np.mean(kept * kept))) if kept.size else 0.0
+    ak, bk = a[keep], b[keep]
+    corr = (float(np.corrcoef(ak, bk)[0, 1])
+            if ak.size > 2 and ak.std() > 0 and bk.std() > 0 else 1.0)
     return {
-        "max_abs": float(np.max(np.abs(diff))) if n else 0.0,
-        "rms": float(np.sqrt(np.mean(diff * diff))) if n else 0.0,
+        "max_abs": max_abs,
+        "rms": rms,
         "corr": corr,
         "n_rejected": n_rejected,
         "n": n,

@@ -220,6 +220,35 @@ class _StickStep(_RateStep):
         return (0.05 if 2.0 <= t < 2.5 else 0.0), 0.0, 0.0, self.thr
 
 
+class _Rearm(RcScenario):
+    """Attitude mode: arm, roll pulse, disarm via switch, then re-arm (D7/T5.13).
+
+    The roll pulse winds the rate integrator; disarming keeps the estimator
+    running; re-arming must reset the rate integrator before that tick's mixer.
+    """
+
+    def _frame(self, tick):
+        t = tick * 0.001
+        if t < 0.4:
+            return self._base_channels(0.0, 0.0, 0.02, 0.0, arm=True), 0
+        if t < 1.0:
+            # A roll pulse before disarm gives the rate loop something to wind up.
+            roll = 0.4 if 0.6 <= t < 0.8 else 0.0
+            return self._base_channels(roll, 0.0, 0.52, 0.0, arm=True), 0
+        if t < 1.3:
+            return self._base_channels(0.0, 0.0, 0.02, 0.0, arm=False), 0
+        return self._base_channels(0.0, 0.0, 0.02, 0.0, arm=True), 0
+
+    def _cmd(self, tick):
+        t = tick * 0.001
+        if t < 0.4:
+            return 0.0, 0.0, 0.0, 0.02
+        if t < 1.0:
+            roll = 0.4 if 0.6 <= t < 0.8 else 0.0
+            return roll, 0.0, 0.0, 0.52
+        return 0.0, 0.0, 0.0, 0.02
+
+
 class _HoverSweep(_RateStep):
     """Throttle sweep {0.8,0.9,1.0,1.1,1.2} x nominal, 1.5 s per step."""
 
@@ -246,6 +275,30 @@ class _Saturation(_RateStep):
     axis = 0
     amp = 1.0
     thr = 0.30  # low collective so a large differential saturates the mixer
+
+
+class _Sbus14ms(_AttHover):
+    """Real SBUS cadence: one 25-byte frame every ~14 ms, silence in between.
+
+    The control loop runs at 1 kHz, so 13 of every 14 ticks see no bytes. The
+    link must stay armed through the gaps and only fail on the 100 ms timeout.
+    """
+
+    def raw(self, tick: int) -> bytes:
+        if tick % 14 != 0:
+            return b""
+        return super().raw(tick)
+
+
+class _Sbus14msDead(_Sbus14ms):
+    """sbus_14ms but the link dies at 0.15 s, before calibration completes."""
+
+    stop_s = 0.15
+
+    def raw(self, tick: int) -> bytes:
+        if tick * 0.001 >= self.stop_s:
+            return b""
+        return super().raw(tick)
 
 
 class _RcLoss(_RateStep):
@@ -283,6 +336,9 @@ def make_scenario(name: str, n_ticks: int) -> RcScenario:
         "stick_step": _StickStep,
         "hover_sweep": _HoverSweep,
         "saturation": _Saturation,
+        "sbus_14ms": _Sbus14ms,
+        "sbus_14ms_dead": _Sbus14msDead,
+        "rearm": _Rearm,
     }
     if name not in table:
         raise ValueError(f"unknown scenario: {name}")

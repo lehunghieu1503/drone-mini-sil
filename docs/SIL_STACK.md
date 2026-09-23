@@ -1,3 +1,10 @@
+> **Banner:** đây là bản phác thảo. Source of truth là code C++20 trong
+> `drone-mini/firmware/`; điều khiển và plant theo `drone-mini/README.md`.
+> Tài liệu này để đọc hiểu, không phải hợp đồng.
+>
+> Bản root và bản `drone-mini/docs/` giữ nội dung như nhau.
+> Khi lệch với code, code thắng.
+
 # SIL / HIL stack — Drone Mini (ESP32-C3)
 
 Tài liệu này mô tả stack giả lập và các bước làm **Software-in-the-Loop (SIL)** rồi **Hardware-in-the-Loop (HIL)** cho board Drone Mini: ESP32-C3 Super Mini, IMU ICM-20948, 4 motor brushed low-side MOSFET, RC UART, nguồn 1S.
@@ -279,7 +286,7 @@ Tham số xương Crazyflie trong RotorPy (chỉ để copy rồi sửa):
 | Key | CF mặc định | Việc phải làm |
 |---|---|---|
 | `mass` | 0.03 kg | Cân board + pin + 4 motor + cánh |
-| arm `d` | 0.043 m | Đo tâm PCB → trục motor |
+| arm `d` | 0.043 m | Offset Descartes `(±d, ±d)` của mỗi motor; bán kính tâm→motor là `d√2` = 60.8 mm. Đo PCB (Tier C) rồi mới đổi tọa độ |
 | `k_eta` | \(2.3\times 10^{-8}\) N/(rad/s)\(^2\) | Hiệu chỉnh hover |
 | `k_m` | \(7.8\times 10^{-10}\) Nm/(rad/s)\(^2\) | Ước lượng, tinh sau |
 | `tau_m` | 0.072 s | Brushed 1S: bắt đầu **0.03 s** (20–50 ms) |

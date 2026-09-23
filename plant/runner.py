@@ -78,6 +78,10 @@ def _pace(t0_wall: float, t_virtual_s: float, rate: float,
 
 
 def run(args, metrics: dict | None = None) -> int:
+    if args.transport_timeout <= 0:
+        # settimeout(0) means non-blocking, not "no timeout"; reject it up front.
+        sys.stderr.write("plant: --transport-timeout must be > 0\n")
+        return proto.EXIT_PROTO
     n_ticks = max(1, int(round(args.t_end / P.DT)))
     try:
         plant = make_plant(args.plant, clean=args.clean_imu, seed=args.seed)

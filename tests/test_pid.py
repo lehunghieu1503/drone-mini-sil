@@ -76,3 +76,32 @@ def test_t5_6_nan_guard(pid):
     assert pid["step"](math.nan, 0.0, 0.001, 0, 0) == 0.0
     assert pid["step"](0.0, math.inf, 0.001, 0, 0) == 0.0
     assert math.isfinite(pid["step"](1.0, 0.0, 0.0, 0, 0))
+
+
+def test_t5_12_stick_yaw_to_rate(lib):
+    """D8: the shared yaw stick mapping, exported from libflight (not a shim)."""
+    fn = bind(lib, "stick_yaw_to_rate", ctypes.c_float, [ctypes.c_float])
+    assert fn(1.0) == pytest.approx(5.236, abs=1e-3)
+    assert fn(-1.0) == pytest.approx(-5.236, abs=1e-3)
+    assert fn(0.0) == pytest.approx(0.0)
+    assert fn(math.nan) == pytest.approx(0.0)
+    assert fn(math.inf) == pytest.approx(0.0)
+
+
+def test_t5_13_conditional_integration_per_flag(pid):
+    """D6: each sat flag blocks only the matching error sign."""
+    pid["set"](0.0, 1.0, 0.0, 10.0, 100.0, 100.0)
+    # Both rails: integral held regardless of error sign.
+    pid["reset"]()
+    a = pid["step"](1.0, 0.0, 0.001, 1, 1)
+    b = pid["step"](1.0, 0.0, 0.001, 1, 1)
+    assert b == pytest.approx(a, abs=1e-9)
+    pid["reset"]()
+    a = pid["step"](-1.0, 0.0, 0.001, 1, 1)
+    b = pid["step"](-1.0, 0.0, 0.001, 1, 1)
+    assert b == pytest.approx(a, abs=1e-9)
+    # High-side sat only: a negative error must still integrate.
+    pid["reset"]()
+    c = pid["step"](-1.0, 0.0, 0.001, 1, 0)
+    d = pid["step"](-1.0, 0.0, 0.001, 1, 0)
+    assert d < c

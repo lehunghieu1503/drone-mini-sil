@@ -15,9 +15,16 @@ void ControlLoop::tick(FlightContext& c, bool arm_test) const {
   uint8_t raw[64];
   const int n = c.hal.rcRawRead(raw, static_cast<int>(sizeof(raw)));
   RcSample rc{};
-  const bool rc_ok = (n > 0) && c.rc.feed(raw, n, rc);
-  rc.frame_ok = rc_ok;
-  rc.t_us = c.hal.nowUs();  // HAL is the single timestamp source (RT#8)
+  if (n > 0 && c.rc.feed(raw, n, rc)) {
+    // Only a decoded frame owns a new timestamp and replaces the hold (D1).
+    rc.t_us = c.hal.nowUs();
+    c.rc_hold = rc;
+    c.have_rc = true;
+  } else if (c.have_rc) {
+    // Silent / partial / error tick: replay the last decoded frame unchanged so
+    // the switch stays held and the 100 ms timeout is the only cut (D1).
+    rc = c.rc_hold;
+  }
 
   float vbat = NAN;
   if (!c.hal.vbatRead(vbat)) vbat = NAN;
@@ -26,18 +33,23 @@ void ControlLoop::tick(FlightContext& c, bool arm_test) const {
   c.fs.update(rc, imu, vbat, c.hal.nowUs(), c.est.calibrated(), arm_test);
 
   // --- estimation ----------------------------------------------------------
+  // Calibrate until done, then fuse every tick (armed or not) so the attitude
+  // is real before the arm edge and stays tracked after a disarm (D7).
   const float dt = kControlDtS;
   ImuSample imu_ctl = imu;
   if (c.est.calibrated()) {  // remove boot ZRO bias before control/fusion
     float bias[3];
     c.est.gyroBias(bias);
     for (int i = 0; i < 3; ++i) imu_ctl.gyro_rps[i] -= bias[i];
-  }
-  if (c.fs.armed()) {
     c.est.update(imu_ctl, dt);
   } else {
     c.est.calibrateUpdate(imu);
   }
+
+  // --- arm edge ------------------------------------------------------------
+  // Clear stale integrator state before the arm tick's mixer so re-arming does
+  // not replay a wound-up command from before the disarm (D7).
+  if (c.fs.armed() && !c.was_armed) c.rate.reset();
 
   // --- control -------------------------------------------------------------
   PwmCmd pwm{};
@@ -45,9 +57,9 @@ void ControlLoop::tick(FlightContext& c, bool arm_test) const {
   switch (c.mode) {
     case ControlMode::kOpenLoop:
       if (c.ol_from_rc) {
-        shift = c.mixer.write(rc.throttle, rc.roll, rc.pitch, rc.yaw, pwm);
+        shift = c.mixer.write(rc.throttle, rc.roll, rc.pitch, rc.yaw, pwm).shift;
       } else {
-        shift = c.mixer.write(c.ol_thr, c.ol_roll, c.ol_pitch, c.ol_yaw, pwm);
+        shift = c.mixer.write(c.ol_thr, c.ol_roll, c.ol_pitch, c.ol_yaw, pwm).shift;
       }
       break;
     case ControlMode::kRateOnly: {
@@ -63,6 +75,7 @@ void ControlLoop::tick(FlightContext& c, bool arm_test) const {
       rc_stick_to_att_sp(rc, att_sp);
       float rate_sp[3];
       c.att.update(att_sp, est, dt, rate_sp);
+      rate_sp[2] = stick_yaw_to_rate(rc.yaw);  // yaw is a rate command (D8)
       RateSp sp{rate_sp[0], rate_sp[1], rate_sp[2], rc.throttle};
       shift = c.rate.update(imu_ctl, sp, pwm);
       break;
@@ -73,6 +86,7 @@ void ControlLoop::tick(FlightContext& c, bool arm_test) const {
 
   // --- single output gate --------------------------------------------------
   c.out.apply(pwm, c.fs.armed(), c.fs.active(), c.est.imuValid(), c.hal);
+  c.was_armed = c.fs.armed();
 
   // --- status LED ----------------------------------------------------------
   if (c.fs.bootLatched()) {

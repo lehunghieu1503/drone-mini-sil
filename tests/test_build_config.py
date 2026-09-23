@@ -38,3 +38,11 @@ def test_t1_3_no_idf_includes_in_flight():
             if pattern.search(line):
                 offenders.append(f"{path.name}:{i}")
     assert offenders == [], f"ESP-IDF include in flight/: {offenders}"
+
+
+def test_t1_14_hal_hw_in_idf_srcs():
+    """The chip component must compile hal_hw.cpp so the #error guard can fire."""
+    cmake = (ROOT / "firmware" / "main" / "CMakeLists.txt").read_text()
+    assert "hal/hal_hw.cpp" in cmake
+    hal = (ROOT / "firmware" / "main" / "hal" / "hal_hw.cpp").read_text()
+    assert "return false" in hal  # init() stays fail-closed until P9

@@ -213,32 +213,37 @@ tư duy "không tin dữ liệu ngoài".
 
 > **Chưa arm → PWM = 0 tuyệt đối.** Không có ngoại lệ.
 
-Nhưng "arm" không chỉ là gạt switch. Có một danh sách điều kiện. Đọc `failsafe.cpp:77`:
+Nhưng "arm" không chỉ là gạt switch. Có một danh sách điều kiện. Đọc `failsafe.cpp`:
 
 ```cpp
-// Chuyển từ chưa-arm sang arm
-armed_ = rc.frame_ok && rc.armed_switch && calibrated && !latched_ && !boot_latched_ &&
-         good_frames_ >= kArmMinGoodFrames && rc.throttle <= kArmThrottleMax && !imu_invalid;
+// Chuyển từ chưa-arm sang arm (fresh: frame MỚI, xem §5.1)
+armed_ = fresh && rc.armed_switch && calibrated && !latched_ && !boot_latched_ &&
+         good_frames_ >= kArmMinGoodFrames && rc.throttle <= kArmThrottleMax &&
+         sticks_centered && !imu_invalid && !vbat_nan_ && vbat >= kVbatCrit;
 ```
 
 Từng điều kiện và lý do:
 
 | Điều kiện | Giá trị | Vì sao |
 |---|---|---|
-| `rc.frame_ok` | — | Frame hiện tại hợp lệ |
+| `fresh` | — | Chỉ frame MỚI (t_us tăng + `frame_ok`) mới được arm |
 | `rc.armed_switch` | ch5 > mid | Người lái chủ động bật |
 | `calibrated` | — | Gyro bias đã hiệu chuẩn (nếu không, drone sẽ trôi) |
 | `!latched_` | — | Không có lỗi đang khóa |
 | `!boot_latched_` | — | Boot sạch (không phải sau brownout/WDT) |
-| `good_frames_ >= 10` | 10 frame = 10 ms | Chống arm bằng frame rác đầu tiên |
+| `good_frames_ >= 10` | 10 frame **nhận được** | Chống arm bằng frame rác. Ở 14 ms/frame, 10 frame ≈ 140 ms |
 | `rc.throttle <= 0.05` | 5% | **Ga phải thấp khi arm** — quy tắc an toàn phổ quát |
+| `sticks_centered` | roll/pitch/yaw ≤ 0.05 | Stick lệch không được arm (D5) |
 | `!imu_invalid` | — | Cảm biến phải khỏe |
+| `!vbat_nan_ && vbat >= kVbatCrit` | ≥ 3.3 V | Mẫu pin hiện tại phải hữu hạn và trên ngưỡng crit (D4) |
 
 ### 4.2 Duy trì armed
 
 ```cpp
 } else if (armed_) {
-  armed_ = rc.frame_ok && rc.armed_switch && !latched_ && !boot_latched_ && !imu_invalid;
+  // frame giữ (hold) vẫn giữ switch; chỉ switch-off trên frame decode được,
+  // latch, hoặc timeout 100 ms mới disarm (D1)
+  armed_ = rc.armed_switch && !latched_ && !boot_latched_ && !imu_invalid;
 }
 ```
 
@@ -259,11 +264,10 @@ Bất kỳ failsafe nào active → disarm ngay, bất kể switch. An toàn tr�
 
 ```cpp
 if (arm_test) {
-  if (!arm_test_prev_) {   // cạnh lên: xóa latch, arm thẳng
-    latched_ = false; boot_latched_ = false; active_ = false;
-    reason_ = kReasonNone; armed_ = true;
+  if (!arm_test_prev_) {   // cạnh lên: arm nếu không có gì đang khóa
+    if (!latched_ && !boot_latched_ && !active_) armed_ = true;
   } else {
-    armed_ = armed_ && !latched_;
+    armed_ = armed_ && !latched_ && !boot_latched_;
   }
 }
 ```
@@ -272,13 +276,17 @@ if (arm_test) {
 không muốn chờ 10 frame hay giả lập switch). Có flag riêng, chỉ bật bằng CLI
 `--arm-test`. Trong production không bao giờ bật.
 
+`arm_test` **không** xóa `latched_`, `boot_latched_`, `active_`, hay `reason_`. Nếu
+một trong các cờ đó đang bật thì `armed_` giữ `false`. Vì vậy `--arm-test` không thể
+vượt qua boot latch sau brownout/WDT.
+
 ---
 
 ## 5. Failsafe — các con đường dẫn đến ngắt motor
 
 ### 5.1 Liveness: chỉ frame MỚI mới tính là sống
 
-`failsafe.cpp:37`:
+`failsafe.cpp`:
 
 ```cpp
 const bool fresh = rc.frame_ok && (!have_frame_ || rc.t_us > last_good_us_);
@@ -287,9 +295,8 @@ if (fresh) {
   last_good_us_ = rc.t_us;
   have_frame_ = true;
   lost_count_ = 0;
-} else {
-  good_frames_ = 0;
-  if (rc.frame_lost && ++lost_count_ >= kRcFrameLostN) lost_count_ = kRcFrameLostN;
+} else if (rc.frame_lost && ++lost_count_ >= kRcFrameLostN) {
+  lost_count_ = kRcFrameLostN;
 }
 const bool rc_timeout = have_frame_ && (now_us - last_good_us_ >= kRcTimeoutUs);
 ```
@@ -298,6 +305,10 @@ Chi tiết tinh tế: **`rc.t_us > last_good_us_`**. Nếu plant (hoặc kẻ t�
 frame cũ với cùng timestamp, nó **không** được tính là frame mới → đồng hồ timeout
 vẫn chạy → failsafe kích hoạt. Đây là red team finding #10: nếu chỉ kiểm `frame_ok`,
 một packet replay có thể "đóng băng" thời gian và che mất failsafe.
+
+Tick im lặng (`n == 0`) **không** xóa `good_frames_`: control loop đưa lại frame giữ
+(hold) với `frame_ok` của frame tốt cuối, nên chỉ timeout 100 ms mới cắt. Đây là D2 —
+SBUS thật gửi ~14 ms/frame, không phải mỗi tick.
 
 Timeout = 100 ms (`kRcTimeoutUs`). Ở 1 kHz, đó là 100 tick — đủ để không báo động giả
 khi mất 1–2 frame, đủ nhanh để cắt motor trước khi drone bay mất kiểm soát.
@@ -318,12 +329,20 @@ motor. Debounce 5 mẫu (5 ms) để tránh lỗi I2C thoáng qua.
 
 ```cpp
 vbat_nan_ = !std::isfinite(vbat);
-const bool vbat_crit = !vbat_nan_ && vbat < kVbatCrit;   // 3.3 V
+if (vbat_nan_ || vbat >= kVbatCrit) vbat_crit_count_ = 0;
+else if (vbat_crit_count_ < kVbatCritSamples) vbat_crit_count_++;
+const bool vbat_crit = vbat_crit_count_ >= kVbatCritSamples;   // 20 mẫu
 ```
 
-Điểm quan trọng: **NaN không được coi là pin khỏe**. `vbat_nan_` là cờ riêng để log;
-nhưng NaN một mình không kích failsafe (vì HIL-1 có thể chưa gắn monitor dòng —
-plan D11). Ngược lại, nếu có số thật và dưới 3.3 V → kích.
+Hai mức (D4):
+
+- **NaN**: một mẫu không hữu hạn là latch **ngay** (`kReasonVbatNan = 1 << 5`) và cắt
+  motor tick đó. Xen kẽ NaN/3.9 V không thể lách qua debounce.
+- **Dưới 3.3 V**: cần **20 mẫu liên tiếp** mới `kReasonVbatCrit`, để một mẫu sụt thoáng
+  qua không cắt motor giữa chừng. Mẫu khỏe reset bộ đếm.
+
+NaN một mình không còn "vô hại" như bản cũ: arm cũng đòi mẫu pin hiện tại hữu hạn và
+≥ crit.
 
 ### 5.4 Latch — khóa lỗi
 
@@ -332,6 +351,7 @@ uint32_t r = kReasonNone;
 if (rc_timeout)  r |= kReasonRcTimeout;
 if (rc.rx_failsafe) r |= kReasonRcFlag;
 if (imu_invalid) r |= kReasonImuInvalid;
+if (vbat_nan_)   r |= kReasonVbatNan;
 if (vbat_crit)   r |= kReasonVbatCrit;
 if (r != kReasonNone) {
   latched_ = true;
@@ -342,12 +362,26 @@ if (r != kReasonNone) {
 
 Hai tính chất:
 
-1. **Latch (khóa)**: một khi lỗi xảy ra, `latched_ = true` **vĩnh viễn** cho đến khi
-   disarm/arm lại. Lỗi thoáng qua không tự phục hồi — bạn phải hạ cánh, tắt arm, bật
-   lại. Đây là quy tắc an toàn: không tự động bay tiếp sau sự cố.
+1. **Latch (khóa)**: một khi lỗi xảy ra, `latched_ = true` cho đến khi **hạ cánh, tắt
+   switch, rồi bật lại** (D3). Lỗi thoáng qua không tự phục hồi. Đây là quy tắc an
+   toàn: không tự động bay tiếp sau sự cố.
 2. **Bitmask**: `reason_ |= r` giữ **tất cả** lý do (không chỉ lý do đầu tiên) để
    debug. Các bit: `kReasonRcTimeout`, `kReasonRcFlag`, `kReasonImuInvalid`,
-   `kReasonVbatCrit`, `kReasonBootLatch`.
+   `kReasonVbatNan`, `kReasonVbatCrit`, `kReasonBootLatch`.
+
+Latch trong bay được xóa bởi **cạnh switch off→on** khi hội đủ: frame mới, ga ≤ 0.05,
+stick trong deadband 0.05, IMU tốt, pin hữu hạn và ≥ crit:
+
+```cpp
+const bool switch_edge_up = rc.armed_switch && !armed_switch_prev_;
+if (switch_edge_up && !boot_latched_ && fresh && rc.throttle <= kArmThrottleMax &&
+    sticks_centered && !imu_invalid && !vbat_nan_ && vbat >= kVbatCrit) {
+  latched_ = false; active_ = false; reason_ = kReasonNone;
+}
+```
+
+Switch **giữ nguyên ON không xóa latch** — phải cycle. Boot latch thì **không xóa
+được** bằng switch; cách duy nhất là rút nguồn.
 
 ### 5.5 Boot latch — nhớ tai nạn từ lần trước
 

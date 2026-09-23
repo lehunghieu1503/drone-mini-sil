@@ -30,10 +30,16 @@ class RateController final : public IRateController {
   void reset() override;
   float update(const ImuSample& imu, const RateSp& sp, PwmCmd& out) override;
 
+  bool lastSatPos() const { return last_sat_pos_; }
+  bool lastSatNeg() const { return last_sat_neg_; }
+
  private:
   IMixer& mixer_;
   Pid pids_[3];
-  float last_shift_ = 0.0f;
+  // Pre-clip saturation flags from the previous mixer write, applied to this
+  // tick's conditional integration (D6).
+  bool last_sat_pos_ = false;
+  bool last_sat_neg_ = false;
 };
 
 class AttitudeController final : public IAttitudeController {
@@ -51,5 +57,9 @@ class AttitudeController final : public IAttitudeController {
 // in rate mode; yaw is always a rate command. Forward pitch stick = nose down.
 void rc_stick_to_rate_sp(const RcSample& rc, RateSp& out);
 void rc_stick_to_att_sp(const RcSample& rc, float out[3]);
+
+// Yaw stick -> yaw rate setpoint (rad/s), shared by rate and attitude modes so
+// the mapping has one definition. Non-finite input maps to 0.
+float stick_yaw_to_rate(float stick);
 
 }  // namespace drone
