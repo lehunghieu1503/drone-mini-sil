@@ -82,6 +82,7 @@ Chặng 5 ─ Làm chủ: bài tập, mở rộng, HIL          [13]
 | `11-sil-lockstep-wire-protocol.md` | Lockstep, wire format, CRC, UDS, determinism | 03, 10 |
 | `12-test-log-tools.md` | ctypes/pytest, log schema, plot/compare, gate | 11 |
 | `13-lo-trinh-hoc-va-bai-tap.md` | **Lộ trình tuần tự + bài tập + checklist master** | tất cả |
+| `14-visual-live-mujoco.md` | Live 3D view với MuJoCo (out-of-process, opt-in) | 11, 12 |
 
 ---
 

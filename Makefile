@@ -2,7 +2,7 @@
 VENV := .venv
 PY   := $(VENV)/bin/python
 
-.PHONY: venv host sil fw test gate plot compare clean venv-visual sim2sim
+.PHONY: venv host sil fw test gate plot compare clean venv-visual sim2sim view visual
 
 venv:
 	uv venv --python 3.13 $(VENV)
@@ -15,6 +15,14 @@ venv-visual:
 # Sim-to-sim comparison across engines (RK4 authoritative, MuJoCo opt-in).
 sim2sim:
 	PYTHONPATH=. $(PY) tools/sim_to_sim.py $(ARGS)
+
+# Live 3D view: `make view` in terminal 1, `make visual` in terminal 2.
+# The viewer is a separate process, so a GL crash cannot affect the SIL run.
+view:
+	PYTHONPATH=. $(PY) tools/mujoco_view.py $(ARGS)
+
+visual: sil
+	PYTHONPATH=. $(PY) -m plant.runner --visual --visual-rate 1.0 $(ARGS)
 
 host:
 	cmake -S firmware -B build/host -DDRONE_HOST_LIB=ON

@@ -23,3 +23,6 @@ logs/
 .vscode/
 .idea/
 .DS_Store
+
+# mujoco runtime artifacts
+MUJOCO_LOG.TXT

@@ -38,16 +38,39 @@ overwrites the body mass/inertia with `drone_mini_params` by default so it is a
 drop-in engine swap. MuJoCo is optional — install it with `make venv-visual`.
 `make sim2sim` compares engines under an identical duty profile.
 
+## Live 3D view (opt-in)
+
+The SIL runner can publish the plant pose over UDP; a **separate** viewer process
+renders it with MuJoCo. Isolation is deliberate — a GL crash, a freeze, or a
+missing display in the viewer can never affect the run or `make gate`.
+
+```sh
+make venv-visual   # once: MuJoCo + GLFW + PyOpenGL
+make view          # terminal 1: viewer (start it first)
+make visual        # terminal 2: SIL run + pose publishing at 1x realtime
+```
+
+Runner flags: `--visual`, `--visual-port` (default `45999`), `--visual-hz`
+(default `200`), `--visual-rate` (`0` = no throttle, `1.0` = realtime, `<1` =
+slow-mo). The viewer may also start *after* the run — the sender backs off ~1 s
+and retries, so no restart is needed. The pose link is a pure consumer: logs are
+byte-identical with or without `--visual`.
+
+Caveats: on macOS run the viewer under `mjpython`; with no display the viewer
+exits 5 with a message while the SIL run continues normally.
+
 ## Build & test
 
 ```sh
 make venv        # uv venv (py3.13) + pinned deps
-make venv-visual # optional: MuJoCo for --plant mujoco (not needed for gate)
+make venv-visual # optional: MuJoCo + GLFW + PyOpenGL (not needed for gate)
 make host        # native host lib (no ESP-IDF required)
 make sil         # sim/sil_runner
 make test        # unit tests only (excludes slow)
 make gate        # unit + slow e2e criteria (the headline gate)
 make sim2sim     # compare RK4 / MuJoCo / RotorPy under one duty profile
+make view        # opt-in live 3D viewer (terminal 1)
+make visual      # opt-in SIL run publishing pose (terminal 2)
 ```
 
 Chip build (`make fw`) requires ESP-IDF **v6.0.x**; P9/P10 are hardware-gated.

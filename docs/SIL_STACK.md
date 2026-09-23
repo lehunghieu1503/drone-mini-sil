@@ -19,6 +19,11 @@ Mục tiêu không phải “bay đẹp trong Gazebo”. Mục tiêu là **cùng
 
 MuJoCo, Gazebo, Isaac, AirSim **không** nằm trong xương sống. Chúng chỉ thêm sau nếu cần va chạm, RL, hoặc visual.
 
+> **Cập nhật (visual opt-in):** tầng live 3D đã có — `make view` (viewer process riêng) +
+> `make visual` (runner publish pose qua UDP). MuJoCo vẫn **ngoài xương sống**: nó là
+> viewer/plant opt-in, không nằm trên đường tới hạn của firmware hay `make gate`.
+> Chi tiết: `drone-mini/note/14-visual-live-mujoco.md`.
+
 ---
 
 ## 2. Phần cứng cần bám
@@ -577,6 +582,10 @@ Pass SPICE không đồng nghĩa pass SIL.
 6. Bay dây.
 
 Bỏ visual, bỏ RL, bỏ mag yaw, bỏ Gazebo.
+
+> **Cập nhật:** visual đã có ở dạng **opt-in ngoài đường tới hạn** (`make view` +
+> `make visual`, viewer process riêng). Ưu tiên khi thiếu thời gian vẫn giữ nguyên:
+> visual không chặn tiến độ tầng A/B/C.
 
 ---
 

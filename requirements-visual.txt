@@ -1,11 +1,14 @@
-# Optional fidelity / visualization dependencies (V3+).
+# Optional fidelity / visualization dependencies (visual plan).
 #
-# NOT required for `make gate` (kept lean + bit-for-bit deterministic on RK4).
+# NOT required for `make gate` (which stays headless and deterministic on RK4).
 # Install into the existing venv:
 #   make venv-visual
 # or:
 #   uv pip install --python .venv/bin/python -r requirements-visual.txt
 #
-# MuJoCo is used only by the opt-in `--plant mujoco` adapter
-# (plant/vehicle_mujoco.py). Tests skip cleanly when it is absent.
+# Used by the opt-in MuJoCo plant (`--plant mujoco`) and the separate viewer
+# process (`make view`). glfw + PyOpenGL are the viewer's native GUI stack and
+# are pinned here because they are not part of requirements.lock.txt.
 mujoco==3.14.0
+glfw==2.10.2
+PyOpenGL==3.1.10
